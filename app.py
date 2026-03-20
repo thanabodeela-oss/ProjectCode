@@ -404,7 +404,7 @@ def page_dashboard():
 
     fda=load_fda(); dbd=load_dbd()
 
-    all_years=sorted([int(y) for y in fda["_year"].dropna().unique()],reverse=True)
+    all_years=sorted([int(y) for y in fda["_year"].dropna().unique() if int(y)>=2561],reverse=True)
     yr_opts=["ทั้งหมด"]+[str(y) for y in all_years]
     col_r,col_s=st.columns([5,2])
     with col_r: sel_yr=st.radio("ปี",yr_opts,horizontal=True,key="d_yr",label_visibility="collapsed")
@@ -433,20 +433,56 @@ def page_dashboard():
     with col1:
         st.markdown('<div class="sec-title">จดแจ้งใหม่รายปี — TREND</div>',unsafe_allow_html=True)
         yr_cnt=fda.groupby("_year").size().reset_index(name="n")
-        yr_cnt=yr_cnt[yr_cnt["_year"].between(2559,2580)].copy()
+        yr_cnt=yr_cnt[yr_cnt["_year"].between(2561,2580)].copy()
         yr_cnt["ปี"]=yr_cnt["_year"].astype(str)
         gold="#d4a017"; green="#059669"
         colors=[green if y==yr_cnt["_year"].max() else gold for y in yr_cnt["_year"]]
-        fig=go.Figure(go.Bar(x=yr_cnt["ปี"],y=yr_cnt["n"],marker_color=colors,
+
+        # คำนวณ % growth เทียบปีก่อน
+        yr_cnt["pct"]=yr_cnt["n"].pct_change()*100
+        yr_cnt["pct_label"]=yr_cnt["pct"].apply(lambda v: f"+{v:.1f}%" if v>=0 else f"{v:.1f}%" if pd.notna(v) else "")
+        pct_colors=["#059669" if (pd.notna(v) and v>=0) else "#dc2626" for v in yr_cnt["pct"]]
+
+        fig=go.Figure()
+        # Bar
+        fig.add_trace(go.Bar(
+            x=yr_cnt["ปี"],y=yr_cnt["n"],marker_color=colors,
             text=yr_cnt["n"].apply(lambda v:f"{v:,}"),textposition="outside",
-            textfont=dict(color="#0d2137",size=10)))
+            textfont=dict(color="#0d2137",size=10),
+            name="จำนวนจดแจ้ง",yaxis="y"))
+        # Line % growth (secondary y-axis)
+        fig.add_trace(go.Scatter(
+            x=yr_cnt["ปี"],y=yr_cnt["pct"],mode="lines+markers+text",
+            line=dict(color="#3b82f6",width=2,dash="dot"),
+            marker=dict(size=7,color=pct_colors,line=dict(color="#fff",width=1)),
+            text=yr_cnt["pct_label"],textposition="top center",
+            textfont=dict(size=9,color="#3b82f6"),
+            name="% เติบโต",yaxis="y2"))
+
         if len(yr_cnt)>=2:
             v=yr_cnt["n"].tolist(); chg=(v[-1]-v[-2])/v[-2]*100 if v[-2] else 0
             fig.add_annotation(text=f"{'▲' if chg>=0 else '▼'} {abs(chg):.0f}%",
-                xref="paper",yref="paper",x=1,y=1.1,showarrow=False,
+                xref="paper",yref="paper",x=1,y=1.08,showarrow=False,
                 font=dict(color=green if chg>=0 else "#dc2626",size=12))
-        fig.update_layout(showlegend=False,bargap=0.3,yaxis=dict(visible=False))
-        dark_fig(fig,260); st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
+
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(orientation="h",x=0,y=-0.15,font=dict(size=10,color="#6b7280")),
+            bargap=0.3,
+            yaxis=dict(
+                showgrid=True,gridcolor="rgba(0,0,0,0.07)",gridwidth=1,
+                tickfont=dict(color="#6b7280",size=9),
+                tickformat=",",zeroline=False),
+            yaxis2=dict(
+                overlaying="y",side="right",
+                showgrid=False,zeroline=True,zerolinecolor="rgba(0,0,0,0.1)",
+                ticksuffix="%",tickfont=dict(color="#3b82f6",size=9)),
+            xaxis=dict(tickfont=dict(color="#6b7280",size=10)),
+        )
+        dark_fig(fig,280)
+        # restore visible grid after dark_fig override
+        fig.update_yaxes(showgrid=True,gridcolor="rgba(0,0,0,0.08)",gridwidth=1)
+        st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
 
     with col2:
         st.markdown('<div class="sec-title">สถานะสินค้าทั้งหมด</div>',unsafe_allow_html=True)
