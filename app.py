@@ -407,10 +407,10 @@ def page_dashboard():
     all_years=sorted([int(y) for y in fda["_year"].dropna().unique()],reverse=True)
     yr_opts=["ทั้งหมด"]+[str(y) for y in all_years]
     col_r,col_s=st.columns([5,2])
-    with col_r: sel_yr=st.radio("",yr_opts,horizontal=True,key="d_yr",label_visibility="collapsed")
+    with col_r: sel_yr=st.radio("ปี",yr_opts,horizontal=True,key="d_yr",label_visibility="collapsed")
     with col_s:
         prod_types=["ทุกประเภท"]+sorted(fda["ประเภทการผลิต"].unique().tolist())
-        sel_type=st.selectbox("",prod_types,key="d_type",label_visibility="collapsed")
+        sel_type=st.selectbox("ประเภท",prod_types,key="d_type",label_visibility="collapsed")
 
     df=fda.copy()
     if sel_yr!="ทั้งหมด": df=df[df["_year"]==int(sel_yr)]
@@ -446,7 +446,7 @@ def page_dashboard():
                 xref="paper",yref="paper",x=1,y=1.1,showarrow=False,
                 font=dict(color=green if chg>=0 else "#dc2626",size=12))
         fig.update_layout(showlegend=False,bargap=0.3,yaxis=dict(visible=False))
-        dark_fig(fig,260); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+        dark_fig(fig,260); st.plotly_chart(fig,width="stretch",config={"displayModeBar":False})
 
     with col2:
         st.markdown('<div class="sec-title">สถานะสินค้าทั้งหมด</div>',unsafe_allow_html=True)
@@ -459,7 +459,7 @@ def page_dashboard():
         fig2.add_annotation(text=f"<b>{round(ok_ct/tot2*100)}%</b><br>Active",
             x=0.5,y=0.5,showarrow=False,font=dict(size=13,color="#0d2137"))
         fig2.update_layout(showlegend=True,legend=dict(font=dict(color="#6b7280",size=11),x=1.02,y=0.5))
-        dark_fig(fig2,260); st.plotly_chart(fig2,use_container_width=True,config={"displayModeBar":False})
+        dark_fig(fig2,260); st.plotly_chart(fig2,width="stretch",config={"displayModeBar":False})
 
     col3,col4=st.columns([5,5])
     with col3:
@@ -471,7 +471,7 @@ def page_dashboard():
             marker_color="#0d2137",text=top8["n"][::-1],textposition="outside",
             textfont=dict(color="#0d2137",size=10)))
         fig3.update_layout(showlegend=False,xaxis=dict(visible=False),yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
-        dark_fig(fig3,300); st.plotly_chart(fig3,use_container_width=True,config={"displayModeBar":False})
+        dark_fig(fig3,300); st.plotly_chart(fig3,width="stretch",config={"displayModeBar":False})
 
     with col4:
         st.markdown('<div class="sec-title">สินค้าที่ต้องติดตาม — ใกล้หมดอายุ / ยกเลิก</div>',unsafe_allow_html=True)
@@ -555,12 +555,12 @@ def page_fda():
             st.download_button("📊 Excel (.xlsx)", data=xlsx,
                 file_name=f"FDA_Export_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True)
+                width="stretch")
         with e2:
             pdf_h=gen_fda_pdf_summary(filtered,(len(filtered),int(appr),int(canc),near))
             st.download_button("📄 PDF Summary (.html)", data=pdf_h.encode("utf-8"),
                 file_name=f"FDA_Summary_{date.today()}.html", mime="text/html",
-                use_container_width=True)
+                width="stretch")
         st.markdown('</div>', unsafe_allow_html=True)
 
     if filtered.empty: st.info("ไม่พบข้อมูล"); return
@@ -608,12 +608,12 @@ def page_dbd_list():
         st.download_button("📊 Export Excel (.xlsx)", data=xlsx,
             file_name=f"DBD_Export_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True)
+            width="stretch")
     with e2:
         pdf_h=gen_dbd_pdf_summary(df)
         st.download_button("📄 PDF Summary (.html)", data=pdf_h.encode("utf-8"),
             file_name=f"DBD_Summary_{date.today()}.html", mime="text/html",
-            use_container_width=True)
+            width="stretch")
     st.markdown("<br>",unsafe_allow_html=True)
 
     # Filters
@@ -663,7 +663,7 @@ def page_dbd_list():
         with cols[3]: st.markdown(f'<div style="font-size:11px;color:#6b7280;">{(row["ทุนจดทะเบียน"] or "-")[:22]}</div>',unsafe_allow_html=True)
         with cols[4]: st.markdown(rb(row["_risk"]),unsafe_allow_html=True)
         with cols[5]:
-            if st.button("ดูข้อมูล",key=f"d_{pg}_{i}",use_container_width=True):
+            if st.button("ดูข้อมูล",key=f"d_{pg}_{i}",width="stretch"):
                 st.session_state.dbd_selected=row.to_dict(); st.rerun()
         st.markdown('<hr style="margin:3px 0;border:none;border-top:1px solid #f0f2f5;">',unsafe_allow_html=True)
 
@@ -688,18 +688,18 @@ def page_dbd_detail():
 
     b1,b2,b3,_=st.columns([1.2,1.6,1.8,4])
     with b1:
-        if st.button("← กลับรายการ",use_container_width=True):
+        if st.button("← กลับรายการ",width="stretch"):
             st.session_state.dbd_selected=None; st.rerun()
     with b2:
         xlsx=to_excel_bytes(pd.DataFrame([row]).drop(columns=["_risk"],errors="ignore"))
         st.download_button("📊 Export Excel",data=xlsx,
             file_name=f"DBD_{reg}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True)
+            width="stretch")
     with b3:
         pdf_h=gen_dbd_company_pdf(row)
         st.download_button("📄 PDF Report (.html)",data=pdf_h.encode("utf-8"),
-            file_name=f"DBD_{reg}.html",mime="text/html",use_container_width=True)
+            file_name=f"DBD_{reg}.html",mime="text/html",width="stretch")
 
     st.markdown('<div style="font-size:11px;color:#9ca3af;margin:6px 0 16px;">💡 หลังดาวน์โหลด HTML → เปิดในเบราว์เซอร์ → Ctrl+P → Save as PDF</div>',unsafe_allow_html=True)
 
