@@ -79,9 +79,12 @@ def kpi(label, value, sub, cls):
 # ── FDA status badge ──────────────────────────────────────────
 def fda_badge(s):
     s = str(s)
-    if s == "อนุมัติ":        return f'<span class="badge b-active">{s}</span>'
-    if s == "สิ้นอายุ":       return f'<span class="badge b-expired">{s}</span>'
-    return                           f'<span class="badge b-cancel">{s}</span>'
+    if s == "อนุมัติ": return f'<span class="badge b-active">อนุมัติ</span>'
+    return                    f'<span class="badge b-cancel">ยกเลิก</span>'
+
+# map raw status → 2 buckets
+def fda_status_bucket(s):
+    return "อนุมัติ" if str(s) == "อนุมัติ" else "ยกเลิก"
 
 # ── DBD status badge ──────────────────────────────────────────
 def dbd_badge(s):
@@ -117,27 +120,29 @@ def tab_fda():
 
     df = load_fda()
 
+    # ── add bucket column ──
+    df = df.copy()
+    df["_สถานะ"] = df["สถานะสินค้า"].apply(fda_status_bucket)
+
     # ── KPIs ──
     total    = len(df)
-    approved = (df["สถานะสินค้า"] == "อนุมัติ").sum()
-    expired  = (df["สถานะสินค้า"] == "สิ้นอายุ").sum()
-    cancelled= total - approved - expired
+    approved = (df["_สถานะ"] == "อนุมัติ").sum()
+    cancelled= total - approved
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(kpi("ทั้งหมด",   total,     "รายการในฐานข้อมูล", "kpi-fda"),   unsafe_allow_html=True)
-    c2.markdown(kpi("อนุมัติ",   approved,  "✅ สินค้าที่อนุมัติแล้ว", "kpi-green"), unsafe_allow_html=True)
-    c3.markdown(kpi("สิ้นอายุ",  expired,   "⚠️ หมดอายุแล้ว",       "kpi-red"),   unsafe_allow_html=True)
-    c4.markdown(kpi("ยกเลิก/อื่นๆ", cancelled, "ยกเลิกหรือสถานะอื่น", "kpi-grey"),  unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(kpi("ทั้งหมด",  total,     "รายการในฐานข้อมูล",    "kpi-fda"),   unsafe_allow_html=True)
+    c2.markdown(kpi("อนุมัติ",  approved,  "✅ สินค้าที่อนุมัติแล้ว","kpi-green"), unsafe_allow_html=True)
+    c3.markdown(kpi("ยกเลิก",   cancelled, "❌ สิ้นอายุ / ยกเลิก",  "kpi-red"),   unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Filters ──
-    f1, f2, f3, f4 = st.columns([2, 1.5, 1.5, 1.5])
+    f1, f2, f3, f4 = st.columns([2.5, 1.2, 1.5, 1.5])
     with f1:
-        q = st.text_input("🔍 ค้นหา (เลขจดแจ้ง / แบรนด์ / ชื่อสินค้า / ผู้ประกอบการ)",
-                          key="fda_q", placeholder="พิมพ์คำค้นหา...")
+        q = st.text_input(
+            "🔍 ค้นหา (เลขจดแจ้ง / แบรนด์ TH-EN / ชื่อสินค้า TH-EN / ผู้ประกอบการ)",
+            key="fda_q", placeholder="พิมพ์คำค้นหา...")
     with f2:
-        status_list = ["ทั้งหมด"] + sorted(df["สถานะสินค้า"].unique().tolist())
-        sel_status = st.selectbox("สถานะสินค้า", status_list, key="fda_status")
+        sel_status = st.selectbox("สถานะสินค้า", ["ทั้งหมด", "อนุมัติ", "ยกเลิก"], key="fda_status")
     with f3:
         prod_list = ["ทั้งหมด"] + sorted(df["ประเภทการผลิต"].unique().tolist())
         sel_prod = st.selectbox("ประเภทการผลิต", prod_list, key="fda_prod")
@@ -150,16 +155,16 @@ def tab_fda():
     if q:
         mask = (
             filtered["เลขจดแจ้ง"].str.contains(q, case=False, na=False) |
+            filtered["เลขจดแจ้งไม่มีขีด"].str.contains(q, case=False, na=False) |
             filtered["BrandsTH"].str.contains(q, case=False, na=False) |
             filtered["BrandsENG"].str.contains(q, case=False, na=False) |
             filtered["ProductnameTH"].str.contains(q, case=False, na=False) |
             filtered["ProductnameENG"].str.contains(q, case=False, na=False) |
-            filtered["ผู้ประกอบการ"].str.contains(q, case=False, na=False) |
-            filtered["เลขจดแจ้งไม่มีขีด"].str.contains(q, case=False, na=False)
+            filtered["ผู้ประกอบการ"].str.contains(q, case=False, na=False)
         )
         filtered = filtered[mask]
     if sel_status != "ทั้งหมด":
-        filtered = filtered[filtered["สถานะสินค้า"] == sel_status]
+        filtered = filtered[filtered["_สถานะ"] == sel_status]
     if sel_prod != "ทั้งหมด":
         filtered = filtered[filtered["ประเภทการผลิต"] == sel_prod]
     if sel_year != "ทั้งหมด":
@@ -171,8 +176,8 @@ def tab_fda():
         st.info("ไม่พบข้อมูลที่ตรงกัน")
         return
 
-    cols_show = ["เลขจดแจ้ง", "BrandsTH", "ProductnameTH", "ผู้ประกอบการ",
-                 "ประเภทการผลิต", "วันที่อนุญาต", "วันหมดอายุ", "สถานะสินค้า"]
+    cols_show = ["เลขจดแจ้ง", "BrandsTH", "BrandsENG", "ProductnameTH",
+                 "ผู้ประกอบการ", "ประเภทการผลิต", "วันที่อนุญาต", "วันหมดอายุ", "_สถานะ"]
     show_paginated(filtered, fda_badge, cols_show, "fda")
 
 
@@ -236,6 +241,73 @@ def tab_dbd():
 
 
 # ══════════════════════════════════════════════════════════════
+#  DASHBOARD TAB
+# ══════════════════════════════════════════════════════════════
+def tab_dashboard():
+    st.markdown('<div style="font-size:20px;font-weight:800;color:#0d1c2e;margin-bottom:2px">Dashboard — ภาพรวม FDA & DBD</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:13px;color:#444651;margin-bottom:16px">สรุปข้อมูลรวมจากฐานข้อมูล FDA.xlsx และ DBDALL.xlsx</div>', unsafe_allow_html=True)
+
+    fda = load_fda()
+    dbd = load_dbd()
+
+    fda["_สถานะ"] = fda["สถานะสินค้า"].apply(fda_status_bucket)
+
+    # ── Summary KPIs row ──
+    fda_total    = len(fda)
+    fda_approved = (fda["_สถานะ"] == "อนุมัติ").sum()
+    fda_cancel   = fda_total - fda_approved
+    dbd_total    = len(dbd)
+    dbd_running  = dbd["สถานะนิติบุคคล"].str.contains("ดำเนินกิจการ", na=False).sum()
+    dbd_closed   = dbd["สถานะนิติบุคคล"].isin(["เลิก", "เสร็จการชำระบัญชี"]).sum()
+
+    st.markdown("#### 🏥 FDA — สำนักงานคณะกรรมการอาหารและยา")
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(kpi("ผลิตภัณฑ์ทั้งหมด", fda_total,    "รายการใน FDA.xlsx",     "kpi-fda"),   unsafe_allow_html=True)
+    c2.markdown(kpi("อนุมัติ",           fda_approved, "✅ ได้รับการอนุมัติ",    "kpi-green"), unsafe_allow_html=True)
+    c3.markdown(kpi("ยกเลิก / สิ้นอายุ", fda_cancel,   "❌ หมดอายุหรือยกเลิก",  "kpi-red"),   unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### 🏢 DBD — กรมพัฒนาธุรกิจการค้า")
+    c4, c5, c6 = st.columns(3)
+    c4.markdown(kpi("นิติบุคคลทั้งหมด",   dbd_total,   "รายการใน DBDALL.xlsx",  "kpi-dbd"),   unsafe_allow_html=True)
+    c5.markdown(kpi("ดำเนินกิจการอยู่",   dbd_running, "✅ ยังเปิดดำเนินการ",    "kpi-green"), unsafe_allow_html=True)
+    c6.markdown(kpi("เลิก / ชำระบัญชี",   dbd_closed,  "❌ ปิดกิจการแล้ว",       "kpi-red"),   unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── Charts row ──
+    ch1, ch2 = st.columns(2)
+
+    with ch1:
+        st.markdown("**สัดส่วนสถานะผลิตภัณฑ์ FDA**")
+        fda_status_counts = fda["_สถานะ"].value_counts().reset_index()
+        fda_status_counts.columns = ["สถานะ", "จำนวน"]
+        st.bar_chart(fda_status_counts.set_index("สถานะ"), color="#00236f", height=280)
+
+    with ch2:
+        st.markdown("**สัดส่วนสถานะนิติบุคคล DBD**")
+        dbd_status_counts = dbd["สถานะนิติบุคคล"].value_counts().reset_index()
+        dbd_status_counts.columns = ["สถานะ", "จำนวน"]
+        st.bar_chart(dbd_status_counts.set_index("สถานะ"), color="#b34600", height=280)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    ch3, ch4 = st.columns(2)
+
+    with ch3:
+        st.markdown("**ประเภทการผลิต FDA (Top 5)**")
+        top_prod = fda["ประเภทการผลิต"].replace("", pd.NA).dropna().value_counts().head(5).reset_index()
+        top_prod.columns = ["ประเภท", "จำนวน"]
+        st.bar_chart(top_prod.set_index("ประเภท"), color="#264191", height=280)
+
+    with ch4:
+        st.markdown("**กลุ่มธุรกิจ DBD (Top 5)**")
+        top_biz = dbd["กลุ่มธุรกิจ"].replace("", pd.NA).dropna().value_counts().head(5).reset_index()
+        top_biz.columns = ["กลุ่ม", "จำนวน"]
+        st.bar_chart(top_biz.set_index("กลุ่ม"), color="#b34600", height=280)
+
+
+# ══════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════
 def main():
@@ -255,10 +327,13 @@ def main():
     """, unsafe_allow_html=True)
     st.divider()
 
-    tab1, tab2 = st.tabs([
+    tab0, tab1, tab2 = st.tabs([
+        "📊  Dashboard — ภาพรวม",
         "🏥  FDA — อย. (เครื่องสำอาง/ผลิตภัณฑ์)",
         "🏢  DBD — กรมพัฒนาธุรกิจการค้า",
     ])
+    with tab0:
+        tab_dashboard()
     with tab1:
         tab_fda()
     with tab2:
