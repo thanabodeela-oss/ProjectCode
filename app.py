@@ -28,11 +28,24 @@ html,body,[class*="css"]{font-family:'Sarabun',sans-serif;background:#f0f2f5;}
 #MainMenu,footer,header{visibility:hidden;}
 .block-container{padding:1rem 1.5rem 2rem!important;background:#f0f2f5;}
 
-/* ── Hide sidebar collapse button ── */
+/* ── Hide sidebar collapse button (keep nav buttons visible) ── */
 [data-testid="collapsedControl"]{display:none!important;}
+[data-testid="stSidebarCollapseButton"]{display:none!important;}
 button[data-testid="baseButton-headerNoPadding"]{display:none!important;}
 .stSidebarCollapsedControl{display:none!important;}
-section[data-testid="stSidebar"] > div > button{display:none!important;}
+/* Force sidebar open, no toggle arrow */
+section[data-testid="stSidebar"]{transform:none!important;width:230px!important;}
+
+/* ── Nav links in sidebar ── */
+.sb-nav a{
+    display:block;padding:10px 18px;
+    color:rgba(255,255,255,0.55);text-decoration:none;
+    font-size:13px;font-weight:600;font-family:'Sarabun',sans-serif;
+    border-left:3px solid transparent;margin:1px 0;
+    transition:all .15s;
+}
+.sb-nav a:hover{color:#fff;background:rgba(255,255,255,0.06);}
+.sb-nav a.active{color:#fff;background:rgba(212,160,23,0.15);border-left-color:#d4a017;}
 
 /* ── Sidebar ── */
 section[data-testid="stSidebar"]{
@@ -55,22 +68,28 @@ section[data-testid="stSidebar"] *{color:#cbd5e1;}
 .sb-sync{padding:14px 18px 20px;border-top:1px solid rgba(255,255,255,0.08);
          font-size:10px;color:rgba(255,255,255,0.3);}
 
-/* Nav buttons */
-div[data-testid="stSidebar"] .stButton>button{
+/* Nav buttons — force visible, override any hide rule */
+section[data-testid="stSidebar"] .stButton>button{
+    display:block!important;
     width:100%!important;text-align:left!important;padding:10px 18px!important;
     background:transparent!important;border:none!important;
-    color:rgba(255,255,255,0.55)!important;
+    color:rgba(255,255,255,0.65)!important;
     font-size:13px!important;font-family:'Sarabun',sans-serif!important;font-weight:600!important;
     border-left:3px solid transparent!important;border-radius:0!important;
     margin:1px 0!important;transition:all .15s!important;
+    box-shadow:none!important;
 }
-div[data-testid="stSidebar"] .stButton>button:hover{
-    color:#fff!important;background:rgba(255,255,255,0.06)!important;
+section[data-testid="stSidebar"] .stButton>button:hover{
+    color:#fff!important;background:rgba(255,255,255,0.08)!important;
 }
-div[data-testid="stSidebar"] .nav-active .stButton>button{
-    color:#fff!important;background:rgba(212,160,23,0.15)!important;
-    border-left-color:#d4a017!important;
+/* ── Nav links in sidebar (HTML fallback style) ── */
+.sb-nav a{
+    display:block;padding:10px 18px;
+    color:rgba(255,255,255,0.55);text-decoration:none;
+    font-size:13px;font-weight:600;border-left:3px solid transparent;margin:1px 0;
 }
+.sb-nav a:hover{color:#fff;background:rgba(255,255,255,0.06);}
+.sb-nav a.active{color:#fff;background:rgba(212,160,23,0.15);border-left-color:#d4a017;}
 
 /* ── Page banner ── */
 .page-banner{
@@ -362,10 +381,10 @@ def sidebar():
         st.markdown('<div class="sb-pill"><div class="uname">Data</div><div class="urole">ตำแหน่ง: Data</div></div>', unsafe_allow_html=True)
         st.markdown('<div class="sb-section">เมนูหลัก</div>', unsafe_allow_html=True)
 
-        nav=[("dashboard","📊  Dashboard","ภาพรวม FDA & DBD"),
-             ("fda",      "🏥  FDA","จดแจ้งผลิตภัณฑ์"),
-             ("dbd",      "🏢  DBD","นิติบุคคล")]
-        for pid, label, _ in nav:
+        nav=[("dashboard","📊  Dashboard"),
+             ("fda",      "🏥  FDA"),
+             ("dbd",      "🏢  DBD")]
+        for pid, label in nav:
             active = "🔸 " if st.session_state.page==pid else "    "
             if st.button(f"{active}{label}", key=f"nav_{pid}"):
                 st.session_state.page=pid; st.session_state.dbd_selected=None; st.rerun()
