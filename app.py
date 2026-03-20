@@ -175,10 +175,28 @@ div[data-testid="stSidebar"] .stDownloadButton>button,
     border:1px solid #d4a017!important;font-weight:700!important;
     font-size:12px!important;
 }
+
+/* ── DBD company card row ── */
+.dbd-card{
+    background:#fff;border-radius:10px;padding:14px 18px;
+    border:1px solid #e5e7eb;border-left:4px solid #0d2137;
+    box-shadow:0 1px 4px rgba(0,0,0,0.05);margin-bottom:8px;
+    display:flex;align-items:center;gap:0;
+}
+.dbd-card:hover{border-left-color:#d4a017;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
+.dbd-card .co-name{font-weight:700;color:#0d2137;font-size:13px;line-height:1.3;}
+.dbd-card .co-reg{font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px;}
+
+/* Section label in sidebar */
+.sb-section-label{
+    font-size:9px;color:rgba(255,255,255,0.25);font-weight:700;
+    text-transform:uppercase;letter-spacing:1.5px;
+    padding:14px 18px 3px;margin-top:6px;
+}
 </style>""", unsafe_allow_html=True)
 
 # ── Session state ─────────────────────────────────────────────
-for k,v in [("page","dashboard"),("dbd_selected",None)]:
+for k,v in [("page","dash_fda"),("dbd_selected",None)]:
     if k not in st.session_state: st.session_state[k]=v
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -226,6 +244,8 @@ def load_fda():
     df=pd.read_excel(FDA_XLSX,dtype=str).fillna("")
     df["_สถานะ"] =df["สถานะสินค้า"].apply(lambda s:"อนุมัติ" if s=="อนุมัติ" else "ยกเลิก")
     df["_year"]  =df["วันที่อนุญาต"].apply(extract_be_year)
+    df["_date"]  =df["วันที่อนุญาต"].apply(parse_thai_date)
+    df["_month"] =df["_date"].apply(lambda d: d.month if d else None)
     df["_expiry"]=df["วันหมดอายุ"].apply(parse_thai_date)
     return df
 
@@ -233,6 +253,9 @@ def load_fda():
 def load_dbd():
     df=pd.read_excel(DBD_XLSX,dtype=str).fillna("")
     df["_risk"]=df.apply(risk_level,axis=1)
+    df["_reg_year"]=df["วันที่จดทะเบียนจัดตั้ง"].apply(extract_be_year)
+    df["_capital_num"]=df["ทุนจดทะเบียน"].apply(
+        lambda s: float(re.sub(r'[^\d.]','',str(s))) if re.sub(r'[^\d.]','',str(s)) else None)
     return df
 
 # ── Excel export ──────────────────────────────────────────────
@@ -381,10 +404,13 @@ def sidebar():
         st.markdown('<div class="sb-pill"><div class="uname">Data</div><div class="urole">ตำแหน่ง: Data</div></div>', unsafe_allow_html=True)
         st.markdown('<div class="sb-section">เมนูหลัก</div>', unsafe_allow_html=True)
 
-        nav=[("dashboard","📊  Dashboard"),
-             ("fda",      "🏥  FDA"),
-             ("dbd",      "🏢  DBD")]
-        for pid, label in nav:
+        st.markdown('<div class="sb-section-label">📈 Analytics</div>', unsafe_allow_html=True)
+        for pid, label in [("dash_fda","📊  Dashboard FDA"),("dash_dbd","📊  Dashboard DBD")]:
+            active = "🔸 " if st.session_state.page==pid else "    "
+            if st.button(f"{active}{label}", key=f"nav_{pid}"):
+                st.session_state.page=pid; st.session_state.dbd_selected=None; st.rerun()
+        st.markdown('<div class="sb-section-label">🗄️ ข้อมูล</div>', unsafe_allow_html=True)
+        for pid, label in [("fda","🏥  FDA"),("dbd","🏢  DBD")]:
             active = "🔸 " if st.session_state.page==pid else "    "
             if st.button(f"{active}{label}", key=f"nav_{pid}"):
                 st.session_state.page=pid; st.session_state.dbd_selected=None; st.rerun()
@@ -393,13 +419,15 @@ def sidebar():
         st.markdown(f'<div class="sb-sync">Last sync<br><span style="color:rgba(255,255,255,0.5);">{date.today().strftime("%d/%m/%Y")}</span></div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-#  DASHBOARD PAGE
+#  FDA DASHBOARD PAGE
 # ══════════════════════════════════════════════════════════════
-def page_dashboard():
+THAI_MONTH_NAMES={1:"ม.ค.",2:"ก.พ.",3:"มี.ค.",4:"เม.ย.",5:"พ.ค.",6:"มิ.ย.",
+                  7:"ก.ค.",8:"ส.ค.",9:"ก.ย.",10:"ต.ค.",11:"พ.ย.",12:"ธ.ค."}
+def page_dash_fda():
     st.markdown("""<div class="page-banner">
-        <div class="acc">Executive Dashboard</div>
-        <h1>FDA จดแจ้งผู้ประกอบการ</h1>
-        <p>ข้อมูลรวม FDA.xlsx และ DBDALL.xlsx</p>
+        <div class="acc">FDA Dashboard</div>
+        <h1>วิเคราะห์การจดแจ้งผลิตภัณฑ์ FDA</h1>
+        <p>Trend รายปี / รายเดือน · หมวดหมู่สินค้า · ผู้ประกอบการ</p>
     </div>""", unsafe_allow_html=True)
 
     fda=load_fda(); dbd=load_dbd()
@@ -522,6 +550,54 @@ def page_dashboard():
         ndf2["สถานะ"]=ndf2["สถานะ"].apply(tb)
         st.write('<div class="df-wrap">'+ndf2.to_html(escape=False,index=False,classes="dataframe")+'</div>',unsafe_allow_html=True)
 
+    # Monthly Trend tab (only when a year is selected)
+    st.markdown("<br>",unsafe_allow_html=True)
+    ta1,ta2=st.tabs(["📅 Trend รายเดือน","🏷️ หมวดหมู่สินค้า"])
+    with ta1:
+        if sel_yr=="ทั้งหมด":
+            st.info("เลือกปีด้านบนเพื่อดู Trend รายเดือน")
+        else:
+            fda_yr=fda[fda["_year"]==int(sel_yr)].copy()
+            mo_cnt=fda_yr[fda_yr["_month"].notna()].groupby("_month").size().reset_index(name="n")
+            mo_cnt["เดือน"]=mo_cnt["_month"].apply(lambda m: THAI_MONTH_NAMES.get(int(m),str(m)))
+            mo_cnt["pct"]=mo_cnt["n"].pct_change()*100
+            mo_cnt["lbl"]=mo_cnt["pct"].apply(lambda v: f"+{v:.0f}%" if pd.notna(v) and v>=0 else (f"{v:.0f}%" if pd.notna(v) else ""))
+            pct_clrs=["#059669" if (pd.notna(v) and v>=0) else "#dc2626" for v in mo_cnt["pct"]]
+            figm=go.Figure()
+            figm.add_trace(go.Bar(x=mo_cnt["เดือน"],y=mo_cnt["n"],
+                marker_color="#d4a017",name="จำนวนจดแจ้ง",yaxis="y",
+                text=mo_cnt["n"].apply(lambda v:f"{v:,}"),textposition="outside",
+                textfont=dict(size=9,color="#0d2137")))
+            figm.add_trace(go.Scatter(x=mo_cnt["เดือน"],y=mo_cnt["pct"],
+                mode="lines+markers+text",line=dict(color="#3b82f6",width=2),
+                marker=dict(size=6,color=pct_clrs),
+                text=mo_cnt["lbl"],textposition="top center",textfont=dict(size=8,color="#3b82f6"),
+                name="% เทียบเดือนก่อน",yaxis="y2"))
+            figm.update_layout(bargap=0.3,showlegend=True,
+                legend=dict(orientation="h",x=0,y=-0.18,font=dict(size=10)),
+                yaxis=dict(showgrid=True,gridcolor="rgba(0,0,0,0.07)",tickformat=",",tickfont=dict(size=9,color="#6b7280")),
+                yaxis2=dict(overlaying="y",side="right",ticksuffix="%",showgrid=False,tickfont=dict(size=9,color="#3b82f6")),
+                xaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+            dark_fig(figm,260)
+            figm.update_yaxes(showgrid=True,gridcolor="rgba(0,0,0,0.08)")
+            st.plotly_chart(figm,width="stretch",config={"displayModeBar":False})
+
+    with ta2:
+        cat_col="ประเภทผลิตภัณฑ์" if "ประเภทผลิตภัณฑ์" in df.columns else "ประเภทการผลิต"
+        cat_cnt=df[df[cat_col]!=""].groupby(cat_col).size().sort_values(ascending=False).head(12)
+        cc1,cc2=st.columns([5,5])
+        with cc1:
+            figcat=go.Figure(go.Bar(y=[s[:22] for s in cat_cnt.index[::-1]],x=cat_cnt.values[::-1],
+                orientation="h",marker_color="#0d2137",
+                text=cat_cnt.values[::-1],textposition="outside",textfont=dict(size=9,color="#0d2137")))
+            figcat.update_layout(showlegend=False,xaxis=dict(visible=False),
+                yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+            dark_fig(figcat,320); st.plotly_chart(figcat,width="stretch",config={"displayModeBar":False})
+        with cc2:
+            figpie=go.Figure(go.Pie(labels=[s[:20] for s in cat_cnt.index],values=cat_cnt.values,
+                hole=0.5,textinfo="percent",textfont=dict(size=10)))
+            dark_fig(figpie,320); st.plotly_chart(figpie,width="stretch",config={"displayModeBar":False})
+
     # DBD summary
     st.markdown("<br>",unsafe_allow_html=True)
     st.markdown('<div class="sec-title">DBD — กรมพัฒนาธุรกิจการค้า</div>',unsafe_allow_html=True)
@@ -532,6 +608,118 @@ def page_dashboard():
     d2.markdown(kcard("ดำเนินกิจการอยู่",dbd_run,"✅ ยังเปิดดำเนินการ","g"),unsafe_allow_html=True)
     d3.markdown(kcard("ต้องติดตาม",dbd_md+dbd_hi,"MEDIUM+HIGH risk","r"),unsafe_allow_html=True)
     d4.markdown(kcard("LOW Risk",len(dbd)-dbd_md-dbd_hi,"ปกติ","o"),unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════
+#  DBD DASHBOARD PAGE
+# ══════════════════════════════════════════════════════════════
+def page_dash_dbd():
+    dbd=load_dbd()
+    st.markdown("""<div class="page-banner">
+        <div class="acc">DBD Dashboard</div>
+        <h1>วิเคราะห์ข้อมูลนิติบุคคล DBD</h1>
+        <p>การเติบโต · กลุ่มธุรกิจ · ทุนจดทะเบียน · ความเสี่ยง</p>
+    </div>""", unsafe_allow_html=True)
+
+    total=len(dbd)
+    run=dbd["สถานะนิติบุคคล"].str.contains("ดำเนินกิจการ",na=False).sum()
+    lo=(dbd["_risk"]=="LOW").sum(); md=(dbd["_risk"]=="MEDIUM").sum(); hi=(dbd["_risk"]=="HIGH").sum()
+    cap_vals=dbd["_capital_num"].dropna()
+    total_cap=cap_vals.sum()
+
+    c1,c2,c3,c4=st.columns(4)
+    c1.markdown(kcard("นิติบุคคลทั้งหมด",int(total),f"{run:,} ดำเนินกิจการ","b"),unsafe_allow_html=True)
+    c2.markdown(kcard("ปกติ (LOW RISK)",int(lo),f"{lo/total*100:.0f}% ของทั้งหมด","g"),unsafe_allow_html=True)
+    c3.markdown(kcard("ต้องติดตาม+เสี่ยงสูง",int(md+hi),f"MEDIUM {md} · HIGH {hi}","r"),unsafe_allow_html=True)
+    total_cap_str=f"{total_cap/1e9:.1f}B" if total_cap>=1e9 else f"{total_cap/1e6:.0f}M"
+    c4.markdown(kcard("ทุนจดทะเบียนรวม",total_cap_str,"บาท","o"),unsafe_allow_html=True)
+    st.markdown("<br>",unsafe_allow_html=True)
+
+    col1,col2=st.columns([5,5])
+    with col1:
+        st.markdown('<div class="sec-title">จดทะเบียนจัดตั้งรายปี (BE)</div>',unsafe_allow_html=True)
+        reg_yr=dbd[dbd["_reg_year"].notna()].copy()
+        reg_yr["_reg_year"]=reg_yr["_reg_year"].astype(int)
+        yr_cnt=reg_yr[reg_yr["_reg_year"].between(2540,2570)].groupby("_reg_year").size().reset_index(name="n")
+        yr_cnt["pct"]=yr_cnt["n"].pct_change()*100
+        yr_cnt["lbl"]=yr_cnt["pct"].apply(lambda v: f"+{v:.0f}%" if pd.notna(v) and v>=0 else (f"{v:.0f}%" if pd.notna(v) else ""))
+        pct_colors=["#059669" if (pd.notna(v) and v>=0) else "#dc2626" for v in yr_cnt["pct"]]
+        figr=go.Figure()
+        figr.add_trace(go.Bar(x=yr_cnt["_reg_year"].astype(str),y=yr_cnt["n"],
+            marker_color="#0d2137",name="จำนวนบริษัท",yaxis="y",
+            text=yr_cnt["n"],textposition="outside",textfont=dict(size=9,color="#0d2137")))
+        figr.add_trace(go.Scatter(x=yr_cnt["_reg_year"].astype(str),y=yr_cnt["pct"],
+            mode="lines+markers+text",line=dict(color="#d4a017",width=2),
+            marker=dict(size=6,color=pct_colors),
+            text=yr_cnt["lbl"],textposition="top center",textfont=dict(size=8,color="#d4a017"),
+            name="% เติบโต",yaxis="y2"))
+        figr.update_layout(bargap=0.25,showlegend=True,
+            legend=dict(orientation="h",x=0,y=-0.18,font=dict(size=10)),
+            yaxis=dict(showgrid=True,gridcolor="rgba(0,0,0,0.07)",tickformat=",",tickfont=dict(size=9,color="#6b7280")),
+            yaxis2=dict(overlaying="y",side="right",ticksuffix="%",showgrid=False,tickfont=dict(size=9,color="#d4a017")),
+            xaxis=dict(tickfont=dict(size=9,color="#6b7280")))
+        dark_fig(figr,290)
+        figr.update_yaxes(showgrid=True,gridcolor="rgba(0,0,0,0.08)",gridwidth=1)
+        st.plotly_chart(figr,width="stretch",config={"displayModeBar":False})
+
+    with col2:
+        st.markdown('<div class="sec-title">กระจายตามกลุ่มธุรกิจ</div>',unsafe_allow_html=True)
+        biz_cnt=dbd[dbd["กลุ่มธุรกิจ"]!=""].groupby("กลุ่มธุรกิจ").size().sort_values(ascending=False).head(10)
+        short_names=[s[:18] for s in biz_cnt.index]
+        figb=go.Figure(go.Bar(y=short_names[::-1],x=biz_cnt.values[::-1],orientation="h",
+            marker_color="#d4a017",text=biz_cnt.values[::-1],
+            textposition="outside",textfont=dict(size=9,color="#0d2137")))
+        figb.update_layout(showlegend=False,xaxis=dict(visible=False),
+            yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+        dark_fig(figb,290); st.plotly_chart(figb,width="stretch",config={"displayModeBar":False})
+
+    col3,col4=st.columns([5,5])
+    with col3:
+        st.markdown('<div class="sec-title">ขนาดธุรกิจ</div>',unsafe_allow_html=True)
+        sz_cnt=dbd[dbd["ขนาดธุรกิจ"]!=""]["ขนาดธุรกิจ"].value_counts()
+        colors_sz=["#0d2137","#d4a017","#059669","#3b82f6","#d97706"]
+        figsz=go.Figure(go.Pie(labels=sz_cnt.index.tolist(),values=sz_cnt.values.tolist(),
+            hole=0.55,marker=dict(colors=colors_sz[:len(sz_cnt)]),
+            textinfo="label+percent",textfont=dict(size=10)))
+        dark_fig(figsz,260); st.plotly_chart(figsz,width="stretch",config={"displayModeBar":False})
+
+    with col4:
+        st.markdown('<div class="sec-title">Risk Distribution</div>',unsafe_allow_html=True)
+        risk_cnt=dbd["_risk"].value_counts().reindex(["LOW","MEDIUM","HIGH"],fill_value=0)
+        risk_colors={"LOW":"#059669","MEDIUM":"#d97706","HIGH":"#dc2626"}
+        figri=go.Figure(go.Bar(
+            x=risk_cnt.index.tolist(),
+            y=risk_cnt.values.tolist(),
+            marker_color=[risk_colors[r] for r in risk_cnt.index],
+            text=risk_cnt.values.tolist(),textposition="outside",
+            textfont=dict(size=12,color="#0d2137")))
+        figri.update_layout(showlegend=False,bargap=0.4,
+            yaxis=dict(showgrid=True,gridcolor="rgba(0,0,0,0.07)",tickformat=","),
+            xaxis=dict(tickfont=dict(size=12,color="#0d2137",family="Sarabun")))
+        dark_fig(figri,260)
+        figri.update_yaxes(showgrid=True,gridcolor="rgba(0,0,0,0.08)")
+        st.plotly_chart(figri,width="stretch",config={"displayModeBar":False})
+
+    # Financial filing compliance
+    st.markdown('<div class="sec-title">การส่งงบการเงิน — ปีล่าสุดที่ส่ง</div>',unsafe_allow_html=True)
+    def last_filing_year(s):
+        yrs=[int(y) for y in re.findall(r'\d{4}',str(s))]
+        return max(yrs) if yrs else None
+    dbd2=dbd.copy()
+    dbd2["_last_filing"]=dbd2["ปีที่ส่งงบการเงิน"].apply(last_filing_year)
+    filing_cnt=dbd2[dbd2["_last_filing"].notna()].groupby("_last_filing").size().reset_index(name="n")
+    filing_cnt=filing_cnt[filing_cnt["_last_filing"].between(2560,2570)].copy()
+    filing_cnt["ปี"]=filing_cnt["_last_filing"].astype(int).astype(str)
+    bar_colors=["#dc2626" if int(y)<=2564 else "#d97706" if int(y)<=2566 else "#059669" for y in filing_cnt["_last_filing"]]
+    figf=go.Figure(go.Bar(x=filing_cnt["ปี"],y=filing_cnt["n"],
+        marker_color=bar_colors,text=filing_cnt["n"],textposition="outside",
+        textfont=dict(size=10,color="#0d2137")))
+    figf.update_layout(bargap=0.3,showlegend=False,
+        yaxis=dict(showgrid=True,gridcolor="rgba(0,0,0,0.07)",tickformat=","),
+        xaxis=dict(tickfont=dict(size=11,color="#6b7280")))
+    dark_fig(figf,220)
+    figf.update_yaxes(showgrid=True,gridcolor="rgba(0,0,0,0.08)")
+    st.plotly_chart(figf,width="stretch",config={"displayModeBar":False})
+    st.markdown('<div style="font-size:11px;color:#6b7280;margin-top:-8px;">🟢 2567+ ปกติ · 🟡 2565-2566 ต้องติดตาม · 🔴 2564 หรือก่อน เสี่ยงสูง</div>',unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
 #  FDA PAGE
@@ -691,17 +879,21 @@ def page_dbd_list():
     page_df=filtered.iloc[(pg-1)*page_size:pg*page_size].reset_index(drop=True)
 
     for i,row in page_df.iterrows():
+        risk_border={"LOW":"#059669","MEDIUM":"#d97706","HIGH":"#dc2626"}.get(row["_risk"],"#e5e7eb")
         cols=st.columns([3.5,1.5,1,1.5,0.8,0.8])
         with cols[0]:
-            st.markdown(f'<div style="padding:4px 0;"><div style="font-weight:700;color:#0d2137;font-size:13px;">{row["Account"]}</div><div style="font-size:11px;color:#9ca3af;font-family:monospace;">{row["เลขทะเบียนนิติบุคคล"]}</div></div>',unsafe_allow_html=True)
-        with cols[1]: st.markdown(sb(row["สถานะนิติบุคคล"]),unsafe_allow_html=True)
-        with cols[2]: st.markdown(f'<div style="font-size:12px;color:#6b7280;">{row["กลุ่มธุรกิจ"] or "-"}</div>',unsafe_allow_html=True)
-        with cols[3]: st.markdown(f'<div style="font-size:11px;color:#6b7280;">{(row["ทุนจดทะเบียน"] or "-")[:22]}</div>',unsafe_allow_html=True)
-        with cols[4]: st.markdown(rb(row["_risk"]),unsafe_allow_html=True)
+            st.markdown(f'''<div style="padding:10px 0 8px;">
+                <div style="font-weight:700;color:#0d2137;font-size:13px;">{row["Account"]}</div>
+                <div style="font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px;">{row["เลขทะเบียนนิติบุคคล"]}</div>
+            </div>''',unsafe_allow_html=True)
+        with cols[1]: st.markdown('<div style="padding-top:10px;">'+sb(row["สถานะนิติบุคคล"])+'</div>',unsafe_allow_html=True)
+        with cols[2]: st.markdown(f'<div style="font-size:12px;color:#6b7280;padding-top:12px;">{row["กลุ่มธุรกิจ"] or "-"}</div>',unsafe_allow_html=True)
+        with cols[3]: st.markdown(f'<div style="font-size:11px;color:#6b7280;padding-top:12px;">{(row["ทุนจดทะเบียน"] or "-")[:22]}</div>',unsafe_allow_html=True)
+        with cols[4]: st.markdown('<div style="padding-top:10px;">'+rb(row["_risk"])+'</div>',unsafe_allow_html=True)
         with cols[5]:
             if st.button("ดูข้อมูล",key=f"d_{pg}_{i}",width="stretch"):
                 st.session_state.dbd_selected=row.to_dict(); st.rerun()
-        st.markdown('<hr style="margin:3px 0;border:none;border-top:1px solid #f0f2f5;">',unsafe_allow_html=True)
+        st.markdown(f'<div style="height:2px;background:linear-gradient(90deg,{risk_border}22,transparent);border-radius:2px;margin-bottom:6px;"></div>',unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
 #  DBD DETAIL PAGE
@@ -778,7 +970,8 @@ def page_dbd_detail():
 def main():
     sidebar()
     page=st.session_state.page
-    if page=="dashboard":    page_dashboard()
+    if page=="dash_fda":     page_dash_fda()
+    elif page=="dash_dbd":   page_dash_dbd()
     elif page=="fda":        page_fda()
     elif page=="dbd":
         if st.session_state.dbd_selected: page_dbd_detail()
