@@ -550,9 +550,14 @@ def page_dash_fda():
         ndf2["สถานะ"]=ndf2["สถานะ"].apply(tb)
         st.write('<div class="df-wrap">'+ndf2.to_html(escape=False,index=False,classes="dataframe")+'</div>',unsafe_allow_html=True)
 
-    # Monthly Trend tab (only when a year is selected)
+    # ── Analysis Tabs ──
     st.markdown("<br>",unsafe_allow_html=True)
-    ta1,ta2=st.tabs(["📅 Trend รายเดือน","🏷️ หมวดหมู่สินค้า"])
+    LV_COLS=["Lv1","Lv2","Lv3","Lv4","Lv5"]
+    LV_LABELS=["Lv1 หมวดใหญ่","Lv2 หมวดย่อย","Lv3 ประเภท","Lv4 ชนิด","Lv5 รายละเอียด"]
+    has_lv=any(df[c].replace("",pd.NA).notna().any() for c in LV_COLS if c in df.columns)
+
+    ta1,ta2,ta3,ta4=st.tabs(["📅 Trend รายเดือน","🏷️ หมวดหมู่สินค้า",
+                              "🔍 Category Drill-down (Lv1-5)","📊 Category × ปี"])
     with ta1:
         if sel_yr=="ทั้งหมด":
             st.info("เลือกปีด้านบนเพื่อดู Trend รายเดือน")
@@ -597,6 +602,178 @@ def page_dash_fda():
             figpie=go.Figure(go.Pie(labels=[s[:20] for s in cat_cnt.index],values=cat_cnt.values,
                 hole=0.5,textinfo="percent",textfont=dict(size=10)))
             dark_fig(figpie,320); st.plotly_chart(figpie,width="stretch",config={"displayModeBar":False})
+
+    # ── Tab 3: Category Drill-down Lv1→Lv5 ──
+    with ta3:
+        if not has_lv:
+            st.markdown("""<div style="background:#fff;border-radius:12px;padding:28px 32px;
+                border:2px dashed #d4a017;text-align:center;margin:12px 0;">
+                <div style="font-size:36px;margin-bottom:8px;">🏷️</div>
+                <div style="font-size:16px;font-weight:700;color:#0d2137;margin-bottom:6px;">
+                    Category Drill-down (Lv1 → Lv5)</div>
+                <div style="font-size:13px;color:#6b7280;line-height:1.8;">
+                    ยังไม่มีข้อมูล Lv1-Lv5 ใน FDA.xlsx<br>
+                    เมื่อใส่ข้อมูลแล้ว จะแสดง:<br><br>
+                    <b>① Treemap</b> — แผนภูมิสัดส่วน Lv1→Lv2→Lv3 ซ้อนกัน<br>
+                    <b>② Drill-down selector</b> — เลือก Lv1 → ดู Lv2 ข้างใน → ดู Lv3<br>
+                    <b>③ สัดส่วน Donut</b> — แต่ละ Level<br>
+                    <b>④ Top ผู้ประกอบการ</b> — ต่อ Category ที่เลือก
+                </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            # ── Lv1 overview ──
+            lv1_cnt=df[df["Lv1"]!=""].groupby("Lv1").size().sort_values(ascending=False)
+            sel_lv1=st.selectbox("เลือก Lv1 (หมวดใหญ่)",["ทั้งหมด"]+lv1_cnt.index.tolist(),key="cat_lv1")
+
+            ov1,ov2=st.columns([5,5])
+            with ov1:
+                st.markdown('<div class="sec-title">สัดส่วน Lv1 — หมวดใหญ่</div>',unsafe_allow_html=True)
+                fig_lv1=go.Figure(go.Pie(labels=[s[:20] for s in lv1_cnt.index],values=lv1_cnt.values,
+                    hole=0.5,textinfo="label+percent",textfont=dict(size=10)))
+                dark_fig(fig_lv1,300); st.plotly_chart(fig_lv1,width="stretch",config={"displayModeBar":False})
+
+            sub=df if sel_lv1=="ทั้งหมด" else df[df["Lv1"]==sel_lv1]
+            with ov2:
+                lv2_cnt=sub[sub["Lv2"]!=""].groupby("Lv2").size().sort_values(ascending=False).head(12)
+                title_lv2=f"Lv2 ภายใต้ «{sel_lv1}»" if sel_lv1!="ทั้งหมด" else "Lv2 ทั้งหมด"
+                st.markdown(f'<div class="sec-title">{title_lv2}</div>',unsafe_allow_html=True)
+                if len(lv2_cnt)==0:
+                    st.info("ยังไม่มีข้อมูล Lv2")
+                else:
+                    fig_lv2=go.Figure(go.Bar(y=[s[:22] for s in lv2_cnt.index[::-1]],x=lv2_cnt.values[::-1],
+                        orientation="h",marker_color="#d4a017",text=lv2_cnt.values[::-1],
+                        textposition="outside",textfont=dict(size=9,color="#0d2137")))
+                    fig_lv2.update_layout(showlegend=False,xaxis=dict(visible=False),
+                        yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+                    dark_fig(fig_lv2,300); st.plotly_chart(fig_lv2,width="stretch",config={"displayModeBar":False})
+
+            # ── Lv2 drill → Lv3 ──
+            if sel_lv1!="ทั้งหมด":
+                lv2_list=sub[sub["Lv2"]!=""]["Lv2"].unique().tolist()
+                if lv2_list:
+                    sel_lv2=st.selectbox("เลือก Lv2 (หมวดย่อย)",["ทั้งหมด"]+sorted(lv2_list),key="cat_lv2")
+                    sub2=sub if sel_lv2=="ทั้งหมด" else sub[sub["Lv2"]==sel_lv2]
+
+                    d1,d2=st.columns([5,5])
+                    with d1:
+                        lv3_cnt=sub2[sub2["Lv3"]!=""].groupby("Lv3").size().sort_values(ascending=False).head(10)
+                        st.markdown(f'<div class="sec-title">Lv3 ภายใต้ «{sel_lv2 if sel_lv2!="ทั้งหมด" else sel_lv1}»</div>',unsafe_allow_html=True)
+                        if len(lv3_cnt)==0:
+                            st.info("ยังไม่มีข้อมูล Lv3")
+                        else:
+                            fig_lv3=go.Figure(go.Bar(y=[s[:22] for s in lv3_cnt.index[::-1]],x=lv3_cnt.values[::-1],
+                                orientation="h",marker_color="#059669",text=lv3_cnt.values[::-1],
+                                textposition="outside",textfont=dict(size=9,color="#0d2137")))
+                            fig_lv3.update_layout(showlegend=False,xaxis=dict(visible=False),
+                                yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+                            dark_fig(fig_lv3,280); st.plotly_chart(fig_lv3,width="stretch",config={"displayModeBar":False})
+                    with d2:
+                        st.markdown(f'<div class="sec-title">Top ผู้ประกอบการ — {sel_lv2 if sel_lv2!="ทั้งหมด" else sel_lv1}</div>',unsafe_allow_html=True)
+                        top_op=sub2[sub2["ผู้ประกอบการ"]!=""].groupby("ผู้ประกอบการ").size().sort_values(ascending=False).head(8)
+                        if len(top_op)==0:
+                            st.info("ไม่มีข้อมูล")
+                        else:
+                            names=[s.replace("บริษัท ","").replace(" จำกัด","")[:22] for s in top_op.index[::-1]]
+                            fig_op=go.Figure(go.Bar(y=names,x=top_op.values[::-1],orientation="h",
+                                marker_color="#0d2137",text=top_op.values[::-1],
+                                textposition="outside",textfont=dict(size=9,color="#0d2137")))
+                            fig_op.update_layout(showlegend=False,xaxis=dict(visible=False),
+                                yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+                            dark_fig(fig_op,280); st.plotly_chart(fig_op,width="stretch",config={"displayModeBar":False})
+
+            # ── Treemap Lv1→Lv2→Lv3 ──
+            tree_df=df[(df["Lv1"]!="")&(df["Lv2"]!="")].copy()
+            if len(tree_df)>0:
+                st.markdown('<div class="sec-title">Treemap — Lv1 → Lv2 → Lv3</div>',unsafe_allow_html=True)
+                tree_df["Lv3_f"]=tree_df["Lv3"].replace("","(ไม่ระบุ)")
+                tree_grp=tree_df.groupby(["Lv1","Lv2","Lv3_f"]).size().reset_index(name="n")
+                import plotly.express as px
+                fig_tree=px.treemap(tree_grp,path=["Lv1","Lv2","Lv3_f"],values="n",
+                    color="n",color_continuous_scale=["#f0f2f5","#d4a017","#0d2137"])
+                fig_tree.update_layout(margin=dict(l=4,r=4,t=30,b=4),height=380,
+                    font=dict(family="Sarabun",size=11),coloraxis_showscale=False)
+                st.plotly_chart(fig_tree,width="stretch",config={"displayModeBar":False})
+
+    # ── Tab 4: Category × Year heatmap ──
+    with ta4:
+        if not has_lv:
+            st.markdown("""<div style="background:#fff;border-radius:12px;padding:28px 32px;
+                border:2px dashed #d4a017;text-align:center;margin:12px 0;">
+                <div style="font-size:36px;margin-bottom:8px;">📊</div>
+                <div style="font-size:16px;font-weight:700;color:#0d2137;margin-bottom:6px;">
+                    Category × ปี Analysis</div>
+                <div style="font-size:13px;color:#6b7280;line-height:1.8;">
+                    ยังไม่มีข้อมูล Lv1-Lv5 ใน FDA.xlsx<br>
+                    เมื่อใส่ข้อมูลแล้ว จะแสดง:<br><br>
+                    <b>① Heatmap</b> — แกน X=ปี, แกน Y=Lv1, สี=จำนวนจดแจ้ง<br>
+                    <b>② Trend เปรียบเทียบ</b> — เลือก 2-3 หมวดดู line chart เทียบกัน<br>
+                    <b>③ หมวดเติบโตเร็ว</b> — % เพิ่มสูงสุดเมื่อเทียบปีก่อน<br>
+                    <b>④ % ยกเลิก ต่อหมวด</b> — หมวดไหนมีอัตรายกเลิกสูง
+                </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            lv_col_sel=st.radio("เลือก Level",["Lv1","Lv2","Lv3"],horizontal=True,key="hm_lv")
+            heat_df=df[(df[lv_col_sel]!="")&(df["_year"].notna())].copy()
+            heat_df["_year"]=heat_df["_year"].astype(int)
+
+            # ── Heatmap ──
+            st.markdown('<div class="sec-title">Heatmap จำนวนจดแจ้ง — แยกตามปี</div>',unsafe_allow_html=True)
+            piv=heat_df.groupby([lv_col_sel,"_year"]).size().reset_index(name="n")
+            piv_t=piv.pivot(index=lv_col_sel,columns="_year",values="n").fillna(0)
+            # top 15
+            piv_t["_total"]=piv_t.sum(axis=1)
+            piv_t=piv_t.sort_values("_total",ascending=False).head(15).drop(columns="_total")
+            import plotly.express as px
+            fig_hm=px.imshow(piv_t.values,x=[str(c) for c in piv_t.columns],y=[s[:22] for s in piv_t.index],
+                aspect="auto",color_continuous_scale=["#f8fafc","#d4a017","#0d2137"],
+                labels=dict(x="ปี (BE)",y=lv_col_sel,color="จำนวน"))
+            fig_hm.update_layout(height=max(280,len(piv_t)*28),font=dict(family="Sarabun"),
+                margin=dict(l=8,r=8,t=30,b=8),xaxis=dict(side="top"))
+            st.plotly_chart(fig_hm,width="stretch",config={"displayModeBar":False})
+
+            # ── Multi-line comparison ──
+            st.markdown('<div class="sec-title">Trend เปรียบเทียบ — เลือกหมวดที่สนใจ</div>',unsafe_allow_html=True)
+            all_cats=heat_df[lv_col_sel].value_counts().head(20).index.tolist()
+            sel_cats=st.multiselect("เลือกหมวด (สูงสุด 5)",all_cats,default=all_cats[:3],max_selections=5,key="hm_sel")
+            if sel_cats:
+                cmp=heat_df[heat_df[lv_col_sel].isin(sel_cats)].groupby([lv_col_sel,"_year"]).size().reset_index(name="n")
+                fig_cmp=go.Figure()
+                line_colors=["#0d2137","#d4a017","#059669","#dc2626","#3b82f6"]
+                for idx,cat in enumerate(sel_cats):
+                    sub=cmp[cmp[lv_col_sel]==cat].sort_values("_year")
+                    fig_cmp.add_trace(go.Scatter(x=sub["_year"].astype(str),y=sub["n"],
+                        mode="lines+markers+text",name=cat[:20],
+                        line=dict(color=line_colors[idx%5],width=2),
+                        marker=dict(size=6),
+                        text=sub["n"].apply(lambda v:f"{v:,}"),textposition="top center",
+                        textfont=dict(size=8)))
+                fig_cmp.update_layout(showlegend=True,
+                    legend=dict(orientation="h",x=0,y=-0.18,font=dict(size=10)),
+                    yaxis=dict(showgrid=True,gridcolor="rgba(0,0,0,0.07)",tickformat=","),
+                    xaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+                dark_fig(fig_cmp,280)
+                fig_cmp.update_yaxes(showgrid=True,gridcolor="rgba(0,0,0,0.08)")
+                st.plotly_chart(fig_cmp,width="stretch",config={"displayModeBar":False})
+
+            # ── Cancel rate per category ──
+            st.markdown('<div class="sec-title">% ยกเลิก ต่อหมวด — หมวดไหนยกเลิกบ่อย</div>',unsafe_allow_html=True)
+            cat_status=df[df[lv_col_sel]!=""].groupby([lv_col_sel,"_สถานะ"]).size().unstack(fill_value=0)
+            if "ยกเลิก" in cat_status.columns and "อนุมัติ" in cat_status.columns:
+                cat_status["total"]=cat_status.sum(axis=1)
+                cat_status["pct_cancel"]=(cat_status["ยกเลิก"]/cat_status["total"]*100).round(1)
+                cat_status=cat_status[cat_status["total"]>=10].sort_values("pct_cancel",ascending=False).head(15)
+                bar_cls=["#dc2626" if p>60 else "#d97706" if p>40 else "#059669" for p in cat_status["pct_cancel"]]
+                fig_canc=go.Figure(go.Bar(y=[s[:22] for s in cat_status.index[::-1]],
+                    x=cat_status["pct_cancel"].values[::-1],orientation="h",
+                    marker_color=bar_cls[::-1],
+                    text=[f"{v}%" for v in cat_status["pct_cancel"].values[::-1]],
+                    textposition="outside",textfont=dict(size=9,color="#0d2137")))
+                fig_canc.update_layout(showlegend=False,
+                    xaxis=dict(title="% ยกเลิก",ticksuffix="%",range=[0,100],
+                        showgrid=True,gridcolor="rgba(0,0,0,0.07)"),
+                    yaxis=dict(tickfont=dict(size=10,color="#6b7280")))
+                dark_fig(fig_canc,max(260,len(cat_status)*22))
+                st.plotly_chart(fig_canc,width="stretch",config={"displayModeBar":False})
 
     # DBD summary
     st.markdown("<br>",unsafe_allow_html=True)
